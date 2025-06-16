@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Map - Interactive Country Finder</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f8f9fa;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            margin: 0 0 20px 0;
+            color: #333;
+            font-size: 28px;
+            font-weight: 600;
+        }
+        
+        .input-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            align-items: flex-start;
+        }
+        
+        #user-input {
+            flex: 1;
+            min-height: 80px;
+            padding: 12px;
+            font-size: 14px;
+            border: 2px solid #e1e5e9;
+            border-radius: 6px;
+            resize: vertical;
+            font-family: inherit;
+            transition: border-color 0.2s;
+        }
+        
+        #user-input:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+        
+        #submit-btn {
+            padding: 12px 24px;
+            font-size: 14px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            height: fit-content;
+            font-weight: 500;
+            transition: background-color 0.2s;
+        }
+        
+        #submit-btn:hover {
+            background-color: #0056b3;
+        }
+        
+        #submit-btn:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        
+        #map { 
+            height: 70vh;
+            min-height: 400px;
+            border: 2px solid #e1e5e9;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        
+        #selected-countries {
+            padding: 16px;
+            background-color: #f8f9fa;
+            border: 1px solid #e1e5e9;
+            border-radius: 6px;
+        }
+        
+        #selected-countries h3 {
+            margin: 0 0 12px 0;
+            color: #333;
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        #country-list {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.4;
+        }
+        
+        .status-message {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        
+        .status-error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        
+        .status-success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        
+        .loading {
+            opacity: 0.6;
+        }
+        
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+            
+            .input-container {
+                flex-direction: column;
+            }
+            
+            #submit-btn {
+                align-self: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🗺️ LLM Map</h1>
+        <p>Describe a country in natural language and see it highlighted on the map!</p>
+        
+        <div class="input-container">
+            <textarea 
+                id="user-input" 
+                placeholder="Examples:&#10;• The country between Canada and Mexico&#10;• Largest country in Scandinavia&#10;• Island nation south of India&#10;• Country that looks like a boot"
+                aria-label="Country description"
+            ></textarea>
+            <button id="submit-btn" aria-label="Find country">Find Country</button>
+        </div>
+        
+        <div id="status-container"></div>
+        
+        <div id="map" role="application" aria-label="Interactive world map"></div>
+        
+        <div id="selected-countries">
+            <h3>Selected Countries:</h3>
+            <div id="country-list">None selected</div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Configuration
+        const CONFIG = {
+            API_URL: 'http://127.0.0.1:5000/get-country',
+            GEOJSON_URL: 'https://raw.githubusercontent.com/datasets/geo-boundaries-world-110m/master/countries.geojson',
+            DEFAULT_STYLE: {
+                color: '#3388ff',
+                weight: 2,
+                fillOpacity: 0.2,
+                fillColor: '#3388ff'
+            },
+            SELECTED_STYLE: {
+                fillColor: 'yellow',
+                fillOpacity: 0.7,
+                weight: 3,
+                color: '#ff6600'
+            }
+        };
+
+        // Global state
+        let map;
+        let geojsonData;
+        let selectedCountries = [];
+        let isLoading = false;
+
+        // Initialize map
+        function initializeMap() {
+            map = L.map('map').setView([20, 0], 2);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+        }
+
+        // Load country data
+        function loadCountryData() {
+            showStatus('Loading map data...', 'success');
+            
+            fetch(CONFIG.GEOJSON_URL)
+                .then(response => {
+                    if (!response.ok) throw new Error('Failed to load map data');
+                    return response.json();
+                })
+                .then(data => {
+                    geojsonData = data;
+                    createMapLayers(data);
+                    clearStatus();
+                })
+                .catch(error => {
+                    console.error('Error loading map data:', error);
+                    showStatus('Failed to load map data. Please refresh the page.', 'error');
+                });
+        }
+
+        // Create interactive map layers
+        function createMapLayers(data) {
+            L.geoJSON(data, {
+                style: CONFIG.DEFAULT_STYLE,
+                onEachFeature: (feature, layer) => {
+                    const countryName = feature.properties.name || feature.properties.admin;
+                    
+                    // Add tooltip
+                    layer.bindTooltip(countryName, {
+                        permanent: false,
+                        direction: 'center'
+                    });
+                    
+                    // Add click handler
+                    layer.on('click', () => {
+                        toggleCountrySelection(countryName, layer);
+                    });
+                }
+            }).addTo(map);
+        }
+
+        // Toggle country selection
+        function toggleCountrySelection(countryName, layer) {
+            const index = selectedCountries.indexOf(countryName);
+            
+            if (index === -1) {
+                selectedCountries.push(countryName);
+                layer.setStyle(CONFIG.SELECTED_STYLE);
+            } else {
+                selectedCountries.splice(index, 1);
+                layer.setStyle(CONFIG.DEFAULT_STYLE);
+            }
+            
+            updateSelectedCountriesDisplay();
+        }
+
+        // Highlight country by ISO code
+        function highlightCountryOnMap(countryCode) {
+            let found = false;
+            
+            map.eachLayer(layer => {
+                if (layer.feature && layer.feature.properties) {
+                    const isoCode = layer.feature.properties.ISO_A3 || layer.feature.properties.iso_a3;
+                    const countryName = layer.feature.properties.name || layer.feature.properties.admin;
+                    
+                    if (isoCode === countryCode) {
+                        console.log('Highlighting country:', countryName);
+                        
+                        if (!selectedCountries.includes(countryName)) {
+                            selectedCountries.push(countryName);
+                        }
+                        
+                        layer.setStyle(CONFIG.SELECTED_STYLE);
+                        
+                        // Zoom to country bounds
+                        if (layer.getBounds) {
+                            map.fitBounds(layer.getBounds(), { padding: [20, 20] });
+                        }
+                        
+                        found = true;
+                    }
+                }
+            });
+            
+            if (found) {
+                updateSelectedCountriesDisplay();
+            } else {
+                console.error('Country code not found on map:', countryCode);
+                showStatus(`Country with code "${countryCode}" not found on map.`, 'error');
+            }
+            
+            return found;
+        }
+
+        // Update selected countries display
+        function updateSelectedCountriesDisplay() {
+            const countryListDiv = document.getElementById('country-list');
+            
+            if (selectedCountries.length === 0) {
+                countryListDiv.textContent = 'None selected';
+            } else {
+                countryListDiv.textContent = selectedCountries.join(', ');
+            }
+        }
+
+        // Clear all selections
+        function clearSelections() {
+            selectedCountries = [];
+            map.eachLayer(layer => {
+                if (layer.feature) {
+                    layer.setStyle(CONFIG.DEFAULT_STYLE);
+                }
+            });
+            updateSelectedCountriesDisplay();
+        }
+
+        // Show status message
+        function showStatus(message, type) {
+            const container = document.getElementById('status-container');
+            container.innerHTML = `<div class="status-message status-${type}">${message}</div>`;
+        }
+
+        // Clear status message
+        function clearStatus() {
+            document.getElementById('status-container').innerHTML = '';
+        }
+
+        // Submit query to API
+        async function submitQuery() {
+            if (isLoading) return;
+            
+            const userInput = document.getElementById('user-input').value.trim();
+            const submitBtn = document.getElementById('submit-btn');
+
+            if (!userInput) {
+                showStatus('Please enter a valid description.', 'error');
+                return;
+            }
+
+            // Update UI state
+            isLoading = true;
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Finding...';
+            document.body.classList.add('loading');
+            
+            clearSelections();
+            showStatus('Analyzing your description...', 'success');
+
+            try {
+                const response = await fetch(CONFIG.API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: userInput })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                if (data.success && data.country_code) {
+                    const found = highlightCountryOnMap(data.country_code);
+                    if (found) {
+                        showStatus(`Found: ${selectedCountries[selectedCountries.length - 1]}`, 'success');
+                    }
+                } else {
+                    showStatus(data.message || 'No country detected. Try a different description.', 'error');
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                showStatus('Error connecting to server. Make sure the backend is running.', 'error');
+            } finally {
+                // Reset UI state
+                isLoading = false;
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Find Country';
+                document.body.classList.remove('loading');
+            }
+        }
+
+        // Event listeners
+        document.getElementById('submit-btn').addEventListener('click', submitQuery);
+
+        document.getElementById('user-input').addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                submitQuery();
+            }
+        });
+
+        // Initialize application
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeMap();
+            loadCountryData();
+        });
+    </script>
+</body>
+</html>
