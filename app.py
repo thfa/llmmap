@@ -60,20 +60,17 @@ def get_country():
         
         # Create enhanced prompt
         prompt = f"""
-        Extract the ISO 3166-1 alpha-3 country code from this description: '{user_input}'
-        
-        Rules:
+        Extract the ISO 3166-1 alpha-3 country code from the description below.
         - Return ONLY the three-letter country code (e.g., USA, GBR, FRA)
         - If multiple countries match, return the most relevant one
         - If no country can be identified, return 'NONE'
         - Do not include any explanation or additional text
-        
         Description: {user_input}
         """
         
         # Call Gemini API
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=prompt
         )
         
@@ -107,5 +104,5 @@ def health_check():
     return jsonify({"status": "healthy", "service": "LLM Map API"})
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 5000))
+    port = int(os.getenv("PORT", 8000))
     app.run(debug=True, host="0.0.0.0", port=port)

@@ -2,6 +2,8 @@
 
 Interactive world map that finds and highlights countries based on natural language descriptions using AI.
 
+![Screenshot](./screenshot.png)
+
 ## Features
 
 - Describe countries in plain English (e.g., "The country between Canada and Mexico")
@@ -19,8 +21,8 @@ Interactive world map that finds and highlights countries based on natural langu
 
 1. **Clone and install dependencies:**
    ```bash
-   git clone <your-repo-url>
-   cd llm-map
+   git clone https://github.com/thfa/llmmap.git
+   cd llmmap-main
    pip install -r requirements.txt
    ```
 
@@ -43,8 +45,7 @@ Interactive world map that finds and highlights countries based on natural langu
 
 Type natural language descriptions like:
 - "The largest country in South America"
-- "Island nation shaped like a boot"
-- "Country that borders both France and Germany"
+- "Country that borders both France and Portugal"
 
 Press Enter or click "Find Country" to see results highlighted on the map.
 
